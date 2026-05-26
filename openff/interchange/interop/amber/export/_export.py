@@ -40,6 +40,22 @@ def _flatten(list_of_lists: Iterable[list[int]]) -> list[int]:
     return [item for sublist in list_of_lists for item in sublist]
 
 
+def _get_openmm_obc2_gb_parameters(interchange: "Interchange") -> tuple[list[float], list[float]]:
+    """Return AMBER-format OBC2 radii and screen factors.
+
+    OpenMM stores GB radii in nanometers; AMBER prmtop RADII are written in
+    Angstroms and converted back to nanometers by OpenMM's AmberPrmtopFile.
+    """
+
+    from openmm.app.internal.customgbforces import GBSAOBC2Force
+
+    openmm_topology = interchange.to_openmm_topology()
+    parameters = GBSAOBC2Force.getStandardParameters(openmm_topology)
+    radii_angstrom = [float(parameter[0]) * 10.0 for parameter in parameters]
+    screen = [float(parameter[1]) for parameter in parameters]
+    return radii_angstrom, screen
+
+
 def _get_per_atom_exclusion_lists(
     topology: "Topology",
 ) -> dict[int, defaultdict[int, list[int]]]:
@@ -747,15 +763,14 @@ def to_prmtop(interchange: "Interchange", file_path: Path | str):
             _write_text_blob(prmtop, text_blob)
 
         prmtop.write("%FLAG RADIUS_SET\n%FORMAT(1a80)\n")
-        prmtop.write("0\n")
+        prmtop.write("OpenMM OBC2\n")
 
         prmtop.write("%FLAG RADII\n%FORMAT(5E16.8)\n")
-        radii = NATOM * [0]
+        radii, screen = _get_openmm_obc2_gb_parameters(interchange)
         text_blob = "".join([f"{val:16.8E}" for val in radii])
         _write_text_blob(prmtop, text_blob)
 
         prmtop.write("%FLAG SCREEN\n%FORMAT(5E16.8)\n")
-        screen = NATOM * [0]
         text_blob = "".join([f"{val:16.8E}" for val in screen])
         _write_text_blob(prmtop, text_blob)
 
